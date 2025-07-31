@@ -71,6 +71,7 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Priority;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.util.concurrent.ThreadContext.StoredContext;
 import org.opensearch.core.action.ActionListener;
@@ -101,6 +102,7 @@ import static org.opensearch.security.support.SnapshotRestoreHelper.isSecurityIn
 
 public class ConfigurationRepository implements ClusterStateListener, IndexEventListener {
     private static final Logger LOGGER = LogManager.getLogger(ConfigurationRepository.class);
+    private static final TimeValue TIMEOUT = TimeValue.timeValueSeconds(30);
 
     private final String securityIndex;
     private final Client client;
@@ -325,7 +327,7 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
     private boolean createSecurityIndexIfAbsent() {
         try {
             final Map<String, Object> indexSettings = ImmutableMap.of("index.number_of_shards", 1, "index.auto_expand_replicas", "0-all");
-            final CreateIndexRequest createIndexRequest = new CreateIndexRequest(securityIndex).settings(indexSettings);
+            final CreateIndexRequest createIndexRequest = new CreateIndexRequest(securityIndex).timeout(TIMEOUT).settings(indexSettings);
             final boolean ok = client.admin().indices().create(createIndexRequest).actionGet().isAcknowledged();
             LOGGER.info("Index {} created?: {}", securityIndex, ok);
             return ok;
@@ -341,7 +343,7 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
         try {
             response = client.admin()
                 .cluster()
-                .health(new ClusterHealthRequest(securityIndex).waitForActiveShards(1).waitForYellowStatus())
+                .health(new ClusterHealthRequest(securityIndex).waitForActiveShards(1).waitForYellowStatus().timeout(TIMEOUT))
                 .actionGet();
         } catch (Exception e) {
             LOGGER.debug("Caught a {} but we just try again ...", e.toString());

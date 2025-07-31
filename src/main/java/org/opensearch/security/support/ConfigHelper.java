@@ -41,6 +41,7 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.action.DocWriteRequest.OpType;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.support.WriteRequest.RefreshPolicy;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.bytes.BytesReference;
@@ -61,6 +62,7 @@ import static org.opensearch.core.xcontent.DeprecationHandler.THROW_UNSUPPORTED_
 public class ConfigHelper {
 
     private static final Logger LOGGER = LogManager.getLogger(ConfigHelper.class);
+    private static final TimeValue TIMEOUT = TimeValue.timeValueSeconds(30);
 
     public static void uploadFile(Client tc, String filepath, String index, CType<?> cType, int configVersion) throws Exception {
         uploadFile(tc, filepath, index, cType, configVersion, false);
@@ -95,6 +97,7 @@ public class ConfigHelper {
                 final IndexRequest indexRequest = new IndexRequest(index).id(configType)
                     .opType(OpType.CREATE)
                     .setRefreshPolicy(RefreshPolicy.IMMEDIATE)
+                        .timeout(TIMEOUT)
                     .source(configType, readXContent(reader, XContentType.YAML));
                 final String res = tc.index(indexRequest).actionGet().getId();
 
