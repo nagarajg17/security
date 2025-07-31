@@ -57,6 +57,7 @@ import org.apache.logging.log4j.Logger;
 
 import org.opensearch.ExceptionsHelper;
 import org.opensearch.OpenSearchException;
+import org.opensearch.OpenSearchTimeoutException;
 import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.cluster.health.ClusterHealthRequest;
 import org.opensearch.action.admin.cluster.health.ClusterHealthResponse;
@@ -71,6 +72,7 @@ import org.opensearch.cluster.metadata.MappingMetadata;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Priority;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.common.util.concurrent.ThreadContext.StoredContext;
 import org.opensearch.core.action.ActionListener;
@@ -96,6 +98,7 @@ import org.opensearch.security.support.SecurityUtils;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.client.Client;
 
+import static org.opensearch.security.support.ConfigConstants.DEFAULT_TIMEOUT;
 import static org.opensearch.security.support.ConfigConstants.SECURITY_ALLOW_DEFAULT_INIT_USE_CLUSTER_STATE;
 import static org.opensearch.security.support.SnapshotRestoreHelper.isSecurityIndexRestoredFromSnapshot;
 
@@ -273,7 +276,8 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
                         LOGGER.error("{} does not exist", confFile.getAbsolutePath());
                     }
                 } catch (Exception e) {
-                    LOGGER.error("Cannot apply default config (this is maybe not an error!)", e);
+                    LOGGER.error("Cannot apply default config", e);
+                    throw e;
                 }
             }
 
@@ -325,13 +329,16 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
     private boolean createSecurityIndexIfAbsent() {
         try {
             final Map<String, Object> indexSettings = ImmutableMap.of("index.number_of_shards", 1, "index.auto_expand_replicas", "0-all");
-            final CreateIndexRequest createIndexRequest = new CreateIndexRequest(securityIndex).settings(indexSettings);
+            final CreateIndexRequest createIndexRequest = new CreateIndexRequest(securityIndex).timeout(DEFAULT_TIMEOUT).settings(indexSettings);
             final boolean ok = client.admin().indices().create(createIndexRequest).actionGet().isAcknowledged();
             LOGGER.info("Index {} created?: {}", securityIndex, ok);
             return ok;
         } catch (ResourceAlreadyExistsException resourceAlreadyExistsException) {
             LOGGER.info("Index {} already exists", securityIndex);
             return false;
+        } catch (OpenSearchTimeoutException timeoutException) {
+            LOGGER.error("Timeout while creating index {}: Operation took too long", securityIndex, timeoutException);
+            throw timeoutException;
         }
     }
 
@@ -341,7 +348,7 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
         try {
             response = client.admin()
                 .cluster()
-                .health(new ClusterHealthRequest(securityIndex).waitForActiveShards(1).waitForYellowStatus())
+                .health(new ClusterHealthRequest(securityIndex).waitForActiveShards(1).waitForYellowStatus().timeout(DEFAULT_TIMEOUT))
                 .actionGet();
         } catch (Exception e) {
             LOGGER.debug("Caught a {} but we just try again ...", e.toString());
@@ -360,7 +367,10 @@ public class ConfigurationRepository implements ClusterStateListener, IndexEvent
                 Thread.currentThread().interrupt();
             }
             try {
-                response = client.admin().cluster().health(new ClusterHealthRequest(securityIndex).waitForYellowStatus()).actionGet();
+                response = client.admin()
+                        .cluster()
+                        .health(new ClusterHealthRequest(securityIndex).waitForYellowStatus().timeout(DEFAULT_TIMEOUT))
+                        .actionGet();
             } catch (Exception e) {
                 LOGGER.debug("Caught again a {} but we just try again ...", e.toString());
             }

@@ -38,9 +38,11 @@ import java.security.PrivilegedExceptionAction;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import org.opensearch.OpenSearchTimeoutException;
 import org.opensearch.action.DocWriteRequest.OpType;
 import org.opensearch.action.index.IndexRequest;
 import org.opensearch.action.support.WriteRequest.RefreshPolicy;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.bytes.BytesReference;
@@ -56,6 +58,7 @@ import org.opensearch.security.securityconf.impl.SecurityDynamicConfiguration;
 import org.opensearch.transport.client.Client;
 
 import static org.opensearch.core.xcontent.DeprecationHandler.THROW_UNSUPPORTED_OPERATION;
+import static org.opensearch.security.support.ConfigConstants.DEFAULT_TIMEOUT;
 
 @Deprecated
 public class ConfigHelper {
@@ -94,7 +97,7 @@ public class ConfigHelper {
 
                 final IndexRequest indexRequest = new IndexRequest(index).id(configType)
                     .opType(OpType.CREATE)
-                    .setRefreshPolicy(RefreshPolicy.IMMEDIATE)
+                    .setRefreshPolicy(RefreshPolicy.IMMEDIATE).timeout(DEFAULT_TIMEOUT)
                     .source(configType, readXContent(reader, XContentType.YAML));
                 final String res = tc.index(indexRequest).actionGet().getId();
 
@@ -106,6 +109,9 @@ public class ConfigHelper {
                 LOGGER.info("Doc with id '{}' and version {} is updated in {} index.", configType, configVersion, index);
             } catch (VersionConflictEngineException versionConflictEngineException) {
                 LOGGER.info("Index {} already contains doc with id {}, skipping update.", index, configType);
+            } catch (OpenSearchTimeoutException timeoutException) {
+                LOGGER.error("Timeout while indexing security doc {}: Operation took too long", cType, timeoutException);
+                throw timeoutException;
             }
             return null;
         });
